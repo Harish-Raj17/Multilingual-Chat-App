@@ -1,3 +1,6 @@
+const { translateText } = require('./translate');
+
+
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
@@ -51,25 +54,44 @@ app.get('/messages', async (req, res) => {
 });
 
 // Endpoint to post message
+const { translateText } = require('./translate'); // add this at top of file
+
 app.post('/messages', async (req, res) => {
   const { sender_id, text, lang } = req.body;
+
   try {
+    // 1. Save message to database
     const result = await pool.query(
       'INSERT INTO messages (sender_id, text, lang) VALUES ($1, $2, $3) RETURNING *',
       [sender_id, text, lang]
     );
 
-    const newMessage = result.rows[0];
+    const originalMessage = result.rows[0];
 
-    // Emit to all connected clients
-    io.emit('newMessage', newMessage);
+    // 2. Translate message to all supported languages
+    const translations = {
+      en: await translateText(text, 'en'),
+      hi: await translateText(text, 'hi'),
+      ta: await translateText(text, 'ta'),
+      te: await translateText(text, 'te')
+    };
 
-    res.status(201).json(newMessage);
+    // 3. Add translations to the message object
+    const messageWithTranslations = {
+      ...originalMessage,
+      translations
+    };
+
+    // 4. Emit translated message to all clients
+    io.emit('newMessage', messageWithTranslations);
+
+    res.status(201).json(messageWithTranslations);
   } catch (err) {
-    console.error('Error saving message:', err);
-    res.status(500).json({ error: 'Failed to save message' });
+    console.error('❌ Error saving or translating message:', err);
+    res.status(500).json({ error: 'Failed to save or translate message' });
   }
 });
+
 
 // Start the server
 const PORT = process.env.PORT || 5000;
